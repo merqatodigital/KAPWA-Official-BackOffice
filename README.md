@@ -1,68 +1,233 @@
-# Welcome to KAPWA Hospitality OS
+# KAPWA Hospitality OS
 
-## Project info
+> A self-hosted, boutique-resort operations platform. One property, one private
+> Supabase project, one domain — no multi-tenant SaaS.
 
-**URL**: https://github.com/digitalnativepalawan/new-KAPWA OS-from-FABLE-5
+**KAPWA Hospitality OS** ("KAPWA OS") is a private, per-customer deployment that
+runs the full day-to-day operations of a small resort or boutique hotel: front
+desk, housekeeping, kitchen, bar, waitstaff, cashier, tours/experiences, and a
+branded guest portal — plus an admin back office with reporting, staff/RBAC,
+billing, and audit logging. An optional self-hosted voice concierge ("TALA")
+and an AI assistant ("Hermes") layer on top.
 
-## How can I edit this code?
+Live demo: https://kapwa-resort-webapp.vercel.app
 
-There are several ways of editing your application.
+---
 
-**Use your preferred IDE**
+## Why "KAPWA"?
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in upstream tooling.
+"Kapwa" is a Filipino/Tagalog concept of shared identity — *treat the other as
+yourself*. The product framing puts staff and guests on the same operational
+surface: a single source of truth for who is arriving, what needs cleaning,
+what was ordered, and what was paid.
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+---
 
-Follow these steps:
+## Features
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+### Customer-facing surfaces (by role)
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+| Module | What it does |
+| --- | --- |
+| **Front desk / Reception** | Arrivals, departures, room status, guest search, room billing, cashier flows. |
+| **Housekeeping** | Inspection workflow, unit status changes, task queue, housekeeping config. |
+| **Kitchen** | Department order board; item prep/status workflow. |
+| **Bar** | Department order board + menu dependency flows. |
+| **Waitstaff** | Order type → menu → cart/drawer → department routing. |
+| **Cashier / Payments** | Room billing modal, payment recording, checkout flow. |
+| **Tours / Experiences** | Booking config, availability calendar, pricing/slots, "today" view. |
+| **Guest portal** | Room-branded guest view (dynamic resort-name fallback). |
+| **Service boards** | Live board views by department. |
+| **Reports** | P&L report/HTML generation, visual breakdown charts, print-to-PDF export. |
+| **OCR** | Receipt scanning via `scan-receipt` Edge Function → AI gateway. |
+| **Staff portal** | Role-gated shells + permission checks, PIN login (mints staff JWT). |
 
-# Step 3: Install the necessary dependencies.
-npm i
+### Admin back office
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+- Configuration, reporting, staff management, billing, expense/budget views.
+- Audit logging.
+- Bot/AI settings (`/admin/bot-settings`).
+- Company onboarding: roles, departments, menus, services, pricing, tour slots.
+
+### Intelligence layer (optional)
+
+- **Hermes assistant** — daily owner summary, guest-response drafting, staff
+  task assistance, review/marketing support, with human-approval controls.
+  Runs as Supabase Edge Functions (`admin-summary`, `ops-coordinator`,
+  `concierge-ai`, `reservations-ai`, …).
+- **TALA voice concierge** — see [`voice-agent/README.md`](voice-agent/README.md).
+  Self-hosted LiveKit + Ollama/Qwen3 + whisper.cpp + Kokoro. Zero per-call
+  cost because everything runs on your own hardware.
+
+---
+
+## Architecture
+
+```
+Browser (React PWA)
+  ├─ UI, offline shells, local form state, print-to-PDF
+  └─ Supabase (auth, Postgres, storage, Edge Functions, webhooks)
+        ├─ Edge Functions: admin-summary, concierge-ai, employee-auth,
+        │   forecast-7day, frontdesk-today, guest-requests-api, guest-search,
+        │   housekeeping, ops-coordinator, orders-today, process-webhook-queue,
+        │   reservations-ai, send-telegram, sirvoy-webhook, today-ops,
+        │   tours-today, scan-receipt
+        └─ Optional: Hermes / Ollama / LiveKit stack (voice concierge,
+            daily summary, agent loops) — private, customer-controlled.
 ```
 
-**Edit a file directly in GitHub**
+**Data isolation:** one Supabase project per customer; one service-role secret
+known only to the deployment and Edge Functions; staff credentials and guest
+data never cross customers.
 
-- Navigate to the desired file(s).
-- Click on the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+---
 
-**Use GitHub Codespaces**
+## Tech stack
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+- **Frontend:** Vite + React 18 + TypeScript, shadcn/ui (Radix), Tailwind CSS
+- **State/data:** TanStack Query, Zustand, react-hook-form + zod
+- **Backend:** Supabase (Postgres + Row Level Security, Auth, Storage,
+  Edge Functions via Deno/TypeScript)
+- **AI:** OpenRouter/Claude-based staff triage (`concierge-ai`) and a
+  self-hosted Ollama/Qwen3 stack for TALA
+- **Voice (optional):** LiveKit + whisper.cpp (STT) + Kokoro (TTS)
+- **Charts/PDF:** Recharts, jsPDF
+- **Tooling:** ESLint, Vitest, Bun (lockfile), Vercel (deploy)
 
-## What technologies are used for this project?
+---
 
-This project is built with:
+## Project structure
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+```
+kapwa-resort-webapp/
+├─ src/                  # React app (pages, components, hooks, lib, integrations)
+│  ├─ pages/             # Index, Reception, Kitchen, Bar, Housekeeper,
+│  │                     #   GuestPortal, Admin, Experiences, Service* shells…
+│  ├─ components/        # UI + role guards (RequireAuth)
+│  └─ integrations/      # Supabase client + types
+├─ supabase/
+│  ├─ functions/         # Edge Functions (Deno/TS)
+│  └─ migrations/        # DB schema migrations
+├─ voice-agent/          # TALA self-hosted voice concierge (Python + PWA)
+├─ server/               # Optional local Hermes proxy
+├─ docs/                 # Pilot plan, security notes
+├─ public/               # Static assets
+└─ vercel.json           # Deploy config
+```
 
-## How can I deploy this project?
+See [`docs/KAPWA-OS-COMMERCIAL-PILOT-PLAN.md`](docs/KAPWA-OS-COMMERCIAL-PILOT-PLAN.md)
+for the scope, packages, and install checklist.
 
-Open the project in your deployment environment and publish via its deployment workflow.
+---
 
-## Can I connect a custom domain to my project?
+## Getting started
 
-Yes, you can!
+### Prerequisites
 
-To connect a domain, follow your deployment provider's custom-domain setup flow.
+- Node.js 22+ (or Bun)
+- A Supabase project
+- (Optional) Docker + a mic for the TALA voice agent
 
-Read more here: https://docs.lovable.dev/features/custom-domain#custom-domain
+### 1. Install
 
+```sh
+git clone <YOUR_GIT_URL>
+cd kapwa-resort-webapp
+npm install        # or: bun install
+```
+
+### 2. Configure environment
+
+```sh
+cp .env.example .env
+```
+
+Fill in your Supabase project values:
+
+```env
+VITE_SUPABASE_PROJECT_ID="your-project-ref"
+VITE_SUPABASE_URL="https://your-project-ref.supabase.co"
+VITE_SUPABASE_PUBLISHABLE_KEY="your-anon-key"
+VITE_USE_STAFF_JWT="false"          # enable after STAFF_JWT_SECRET + RLS migration
+VITE_INTERNAL_FN_SECRET="change-me" # also set in Supabase → Edge Functions → Secrets
+```
+
+> Edge-function secrets (`INTERNAL_FN_SECRET`, `STAFF_JWT_SECRET`,
+> `OPENROUTER_API_KEY`, `LOVABLE_API_KEY`, `TELEGRAM_BOT_TOKEN`) are set in
+> Supabase, **not** in `.env`. See `.env.example` for the full list.
+
+### 3. Apply database migrations
+
+```sh
+supabase db push        # or paste supabase/migrations/*.sql into the SQL editor
+```
+
+### 4. Run locally
+
+```sh
+npm run dev             # frontend (Vite)
+npm run dev:server      # optional local Hermes proxy (server/)
+```
+
+### 5. Test / lint / build
+
+```sh
+npm run test            # Vitest
+npm run lint            # ESLint
+npm run build           # production build
+```
+
+---
+
+## Deploy
+
+Frontend builds are deployed to Vercel (or any static host). The frontend build
+env must contain **only** public Supabase anon settings; the internal Edge
+Function secret and Hermes host/token must **never** reach the browser.
+
+- Set the custom domain / CORS origin per deployment.
+- Deploy Supabase Edge Functions: `supabase functions deploy`.
+
+---
+
+## Voice concierge (TALA)
+
+`voice-agent/` is a separate, self-hosted module: LiveKit room transport +
+Ollama/Qwen3 8B (LLM) + whisper.cpp (STT) + Kokoro (TTS) + Supabase (live ops
+data). 12 tools query real KAPWA OS tables (availability, tasks, maintenance,
+housekeeping, inventory, weather, events, FAQ…).
+
+```sh
+cd voice-agent
+docker compose up --build
+```
+
+See [`voice-agent/README.md`](voice-agent/README.md) for setup, tools, and the
+four agent loops (Planner → Execution → Verification → Repair).
+
+---
+
+## Security notes
+
+- The repo's root `.env` has historically been committed — **rotate any secret
+  that was ever in it** before going live, and scrub it from git history.
+- Enable Row Level Security and the staff-JWT flow (see
+  `docs/security/rls-migration.md`) before any commercial deployment.
+- Remove client-side references to `VITE_INTERNAL_FN_SECRET` / internal request
+  headers; move those calls into Edge Functions.
+- Run `npm audit` and patch moderate/high/critical issues per customer deployment.
+
+---
+
+## Documentation
+
+- [`docs/KAPWA-OS-COMMERCIAL-PILOT-PLAN.md`](docs/KAPWA-OS-COMMERCIAL-PILOT-PLAN.md) — product inventory, pilot scope, packages, install checklist
+- [`docs/security/`](docs/security) — RLS migration and security status
+- [`voice-agent/README.md`](voice-agent/README.md) — TALA voice agent
+
+---
+
+## License
+
+See repository for license terms. Private, per-customer deployment — not offered
+as public multi-tenant SaaS.

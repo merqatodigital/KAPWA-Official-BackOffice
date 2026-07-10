@@ -64,17 +64,47 @@ what was ordered, and what was paid.
 ## Architecture
 
 ```
-Browser (React PWA)
-  ├─ UI, offline shells, local form state, print-to-PDF
-  └─ Supabase (auth, Postgres, storage, Edge Functions, webhooks)
-        ├─ Edge Functions: admin-summary, concierge-ai, employee-auth,
-        │   forecast-7day, frontdesk-today, guest-requests-api, guest-search,
-        │   housekeeping, ops-coordinator, orders-today, process-webhook-queue,
-        │   reservations-ai, send-telegram, sirvoy-webhook, today-ops,
-        │   tours-today, scan-receipt
-        └─ Optional: Hermes / Ollama / LiveKit stack (voice concierge,
-            daily summary, agent loops) — private, customer-controlled.
+┌──────────────────────────────────────────────────────────────────────┐
+│                         Browser · React PWA                           │
+│  Guest Portal · Reception · Kitchen · Bar · Housekeeping · Cashier ·  │
+│  Waitstaff · Tours · Admin · Staff portal                             │
+│  offline-capable shells · local form state · print-to-PDF exports     │
+└────────────────────────────────┬─────────────────────────────────────┘
+                                 │ HTTPS · Supabase client
+                                 │ (public anon key + staff JWT)
+                                 ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                      Supabase (one project per property)              │
+│  Auth (PIN → staff JWT) · Postgres + Row-Level Security · Storage ·   │
+│  Realtime · Webhooks / Scheduled jobs                                 │
+└────────────────────────────────┬─────────────────────────────────────┘
+                                 │ Edge Functions (Deno / TypeScript)
+                                 ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  admin-summary     ops-coordinator     concierge-ai     reservations-ai│
+│  frontdesk-today   orders-today        housekeeping      tours-today   │
+│  forecast-7day     guest-requests-api  guest-search      employee-auth │
+│  send-telegram     sirvoy-webhook      process-webhook-queue  scan-receipt
+└───────────┬──────────────────────────────────┬────────────────────────┘
+            │                                   │
+            ▼                                   ▼
+   External AI gateway                  Integrations
+   (OpenRouter / Lovable)               Telegram · WhatsApp · Sirvoy channel mgr
+
+┌──────────────────────────────────────────────────────────────────────┐
+│  Optional · customer-controlled · Hermes / Ollama orchestration       │
+│  ── TALA voice concierge (voice-agent/):                              │
+│     LiveKit (transport) → whisper.cpp (STT) → Ollama/Qwen3 (LLM) →    │
+│     Kokoro (TTS) → LiveKit · tools read/write live ops tables         │
+└──────────────────────────────────────────────────────────────────────┘
 ```
+
+**Three runtime tiers:** a browser PWA for staff/guests, a Supabase backend
+(one isolated project per customer) holding all operational data, and a set of
+server-side Edge Functions that orchestrate AI and external integrations. The
+voice concierge (TALA) is an optional, self-hosted layer that talks to the
+same Supabase data — nothing leaves the customer's infrastructure unless an
+explicit integration (Telegram, WhatsApp, Sirvoy, AI gateway) is enabled.
 
 **Data isolation:** one Supabase project per customer; one service-role secret
 known only to the deployment and Edge Functions; staff credentials and guest
